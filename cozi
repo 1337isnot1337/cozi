@@ -1,0 +1,208 @@
+
+#   Copyright (C) 2025 1337isnot1337 on Github (https://github.com/1337isnot1337)
+#
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#!/bin/bash
+
+COZI_DIR="$HOME/.config/Vencord/cozi"
+PLUGIN_REPOS="$COZI_DIR/pluginRepos"
+MAIN_REPO="$COZI_DIR/mainRepo"
+PLUGIN_LIST="$COZI_DIR/pluginList.txt"
+VERBOSE=false
+
+color() { echo -e "\e[$1m$2\e[0m"; }
+verbose_output() { [ "$VERBOSE" = true ] && echo "$1"; }
+
+initialize_cozi() {
+    if [ ! -d "$COZI_DIR" ]; then
+        color 34 "Initializing Cozi..."
+        mkdir -p "$PLUGIN_REPOS"
+        touch "$PLUGIN_LIST"
+        color 32 "Cloning Vencord repository..."
+        git clone https://github.com/Vendicated/Vencord "$MAIN_REPO" >/dev/null 2>&1
+        cd "$MAIN_REPO" || exit
+        pnpm install --frozen-lockfile >/dev/null 2>&1
+        color 32 "Cozi setup complete!"
+    fi
+}
+
+add_plugin() {
+    local git_link="$1"
+    if [ -z "$git_link" ]; then
+        color 31 "Error: No git link provided."
+        exit 1
+    fi
+
+    local repo_name=$(basename "$git_link" .git)
+    grep -q "^$git_link$" "$PLUGIN_LIST" && {
+        color 33 "Plugin $repo_name already added."
+        return
+    }
+
+    color 32 "Adding plugin: $repo_name..."
+    git clone "$git_link" "$PLUGIN_REPOS/$repo_name" >/dev/null 2>&1 || {
+        color 31 "Failed to clone $git_link."
+        exit 1
+    }
+    echo "$git_link" >>"$PLUGIN_LIST"
+
+    local package_json="$MAIN_REPO/package.json"
+    local plugin_path="$PLUGIN_REPOS/$repo_name"
+
+    if [ ! -f "$package_json" ]; then
+        color 31 "Error: package.json not found."
+        exit 1
+    fi
+
+    local installed_deps=$(jq -r '.dependencies + .devDependencies | keys[]' "$package_json")
+    local imports=$(grep -Pohr '(?<=from\s+["'''"])(.+?)(?=["'''"])' "$plugin_path" | sort -u)
+
+    for import in $imports; do
+        if [[ ! "$import" =~ ^(\.|\/) ]] && ! echo "$installed_deps" | grep -q "^$import$"; then
+            color 33 "Installing missing dependency: $import"
+            pnpm install "$import" --prefix "$MAIN_REPO" >/dev/null 2>&1 || {
+                color 31 "Failed to install $import."
+                exit 1
+            }
+        fi
+    done
+
+    copy_plugin "$repo_name"
+}
+
+copy_plugin() {
+    local repo_name="$1"
+    local plugin_path="$PLUGIN_REPOS/$repo_name"
+    local dest_path="$MAIN_REPO/src/userplugins/$repo_name"
+
+    [ ! -d "$plugin_path" ] && {
+        color 31 "Error: Plugin $repo_name not found."
+        exit 1
+    }
+
+    color 32 "Copying plugin: $repo_name..."
+    mkdir -p "$MAIN_REPO/src/userplugins"
+    rsync -av --exclude='.git' "$plugin_path/" "$dest_path/" >/dev/null 2>&1 || {
+        color 31 "Failed to copy $repo_name."
+        exit 1
+    }
+}
+
+remove_plugin() {
+    local repo_name="$1"
+    local dest_path="$MAIN_REPO/src/userplugins/$repo_name"
+
+    [ ! -d "$dest_path" ] && {
+        color 31 "Error: Plugin $repo_name not found."
+        exit 1
+    }
+
+    color 32 "Removing plugin: $repo_name..."
+    rm -rf "$dest_path" || {
+        color 31 "Failed to remove $repo_name."
+        exit 1
+    }
+}
+
+delete_plugin() {
+    local repo_name="$1"
+    [ -z "$repo_name" ] && {
+        color 31 "Error: No repository name provided."
+        exit 1
+    }
+    local plugin_path="$PLUGIN_REPOS/$repo_name"
+
+    [ ! -d "$plugin_path" ] && {
+        color 31 "Error: Plugin $repo_name not found."
+        exit 1
+    }
+
+    color 32 "Deleting plugin repository: $repo_name..."
+    rm -rf "$plugin_path" || {
+        color 31 "Failed to delete $repo_name."
+        exit 1
+    }
+    sed -i "/$repo_name/d" "$PLUGIN_LIST"
+}
+
+patch_vencord() {
+    color 32 "Building and injecting Vencord..."
+    cd "$MAIN_REPO" || exit
+    pnpm build >/dev/null 2>&1 || {
+        color 31 "Build failed."
+        exit 1
+    }
+    pnpm inject || {
+        color 31 "Injection failed."
+        exit 1
+    }
+    color 32 "Vencord successfully patched!"
+}
+
+update_plugins() {
+    color 32 "Updating all plugins..."
+    for plugin_dir in "$PLUGIN_REPOS"/*; do
+        [ -d "$plugin_dir/.git" ] || continue
+        local repo_name=$(basename "$plugin_dir")
+        color 33 "Updating: $repo_name"
+        git -C "$plugin_dir" pull >/dev/null 2>&1 || {
+            color 31 "Failed to update $repo_name."
+            exit 1
+        }
+        copy_plugin "$repo_name"
+    done
+    color 32 "All plugins updated!"
+}
+
+uninstall_cozi() {
+    color 31 "Uninstalling Cozi and removing all related files..."
+    rm -rf "$COZI_DIR" || {
+        color 31 "Failed to remove Cozi directory."
+        exit 1
+    }
+    color 32 "Cozi has been successfully uninstalled."
+}
+
+cozi_help() {
+    color 36 "\nCozi - Vencord Plugin Manager"
+    color 35 "\nUsage: cozi [command] [arguments]"
+    color 35 "\nCommands:"
+    echo "  $(color 33 add) [git link]    - Add a plugin repository"
+    echo "  $(color 33 delete) [repo name] - Remove plugin repository"
+    echo "  $(color 33 patch)             - Build & inject Vencord"
+    echo "  $(color 33 update)            - Update all plugins"
+    echo "  $(color 33 uninstall)         - Uninstall Cozi"
+    echo "  $(color 33 verbose)           - Enable verbose mode"
+    echo "  $(color 33 help)              - Show this help menu"
+}
+
+main() {
+    [ "$1" == "-v" ] || [ "$1" == "verbose" ] && VERBOSE=true && shift
+    initialize_cozi
+    case "$1" in
+    add) add_plugin "$2" ;;
+    delete) delete_plugin "$2" ;;
+    patch) patch_vencord ;;
+    update) update_plugins ;;
+    uninstall) uninstall_cozi ;;
+    help) cozi_help ;;
+    *)
+        cozi_help
+        exit 1
+        ;;
+    esac
+}
+
+main "$@"
