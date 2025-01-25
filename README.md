@@ -1,7 +1,9 @@
 cozi is a simple, command-line package manager for Vencord packages that aren't officialy supported. 
 Made by 1337isnot1337, protected under GPL v3
+Please feel free to PR or add issues
 
 Installation: 
+
   `git clone https://github.com/1337isnot1337/cozi` 
 
   `cd cozi` 
@@ -14,16 +16,16 @@ Usage: `./cozi [command] [arguments]`
 
 Commands:
 
-    `add [git link]`    - Add a plugin repository 
+    add [git link]     - Add a plugin repository 
 
-    `delete [repo name]` - Remove plugin repository
+    delete [repo name] - Remove plugin repository
 
-    `patch`             - Build & inject Vencord
+    patch              - Build & inject Vencord
 
-    `update`            - Update all plugins
+    update             - Update all plugins
 
-    `uninstall`         - Uninstall Cozi
+    uninstall          - Uninstall Cozi
 
-    `help`              - Show this help menu
+    help               - Show this help menu
 
 
