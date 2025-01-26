@@ -52,6 +52,7 @@ add_plugin() {
             fi
         done <"$git_link"
         color 32 "All plugins installed successfully!"
+        color 33 "Now, enable with ./cozi patch"
     else
         add_single_plugin "$git_link"
     fi
