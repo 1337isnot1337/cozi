@@ -1,4 +1,3 @@
-
 #   Copyright (C) 2025 1337isnot1337 on Github (https://github.com/1337isnot1337)
 #
 #   This program is free software: you can redistribute it and/or modify
@@ -37,49 +36,25 @@ initialize_cozi() {
         color 32 "Cozi setup complete!"
     fi
 }
-
 add_plugin() {
     local git_link="$1"
     if [ -z "$git_link" ]; then
-        color 31 "Error: No git link provided."
+        color 31 "Error: No git link or file provided."
         exit 1
     fi
 
-    local repo_name=$(basename "$git_link" .git)
-    grep -q "^$git_link$" "$PLUGIN_LIST" && {
-        color 33 "Plugin $repo_name already added."
-        return
-    }
-
-    color 32 "Adding plugin: $repo_name..."
-    git clone "$git_link" "$PLUGIN_REPOS/$repo_name" >/dev/null 2>&1 || {
-        color 31 "Failed to clone $git_link."
-        exit 1
-    }
-    echo "$git_link" >>"$PLUGIN_LIST"
-
-    local package_json="$MAIN_REPO/package.json"
-    local plugin_path="$PLUGIN_REPOS/$repo_name"
-
-    if [ ! -f "$package_json" ]; then
-        color 31 "Error: package.json not found."
-        exit 1
+    if [ -f "$git_link" ]; then
+        color 32 "Reading plugin links from file: $git_link"
+        while IFS= read -r line; do
+            # skips commented lines if you want that
+            if [ -n "$line" ] && [[ ! "$line" =~ ^# ]]; then
+                add_single_plugin "$line"
+            fi
+        done <"$git_link"
+        color 32 "All plugins installed successfully!"
+    else
+        add_single_plugin "$git_link"
     fi
-
-    local installed_deps=$(jq -r '.dependencies + .devDependencies | keys[]' "$package_json")
-    local imports=$(grep -Pohr '(?<=from\s+["'''"])(.+?)(?=["'''"])' "$plugin_path" | sort -u)
-
-    for import in $imports; do
-        if [[ ! "$import" =~ ^(\.|\/) ]] && ! echo "$installed_deps" | grep -q "^$import$"; then
-            color 33 "Installing missing dependency: $import"
-            pnpm install "$import" --prefix "$MAIN_REPO" >/dev/null 2>&1 || {
-                color 31 "Failed to install $import."
-                exit 1
-            }
-        fi
-    done
-
-    copy_plugin "$repo_name"
 }
 
 copy_plugin() {
@@ -140,15 +115,35 @@ delete_plugin() {
 patch_vencord() {
     color 32 "Building and injecting Vencord..."
     cd "$MAIN_REPO" || exit
+
     pnpm build >/dev/null 2>&1 || {
         color 31 "Build failed."
         exit 1
     }
-    pnpm inject || {
-        color 31 "Injection failed."
-        exit 1
-    }
-    color 32 "Vencord successfully patched!"
+
+    color 32 "Attempting Auto-Patch"
+
+    # Disable user input so they don't screw it up
+    stty -echo -icanon
+
+    {
+        # If this fails repeatedly increase the times
+        sleep 1.5
+        echo -e "\033[B"
+        sleep 0.6
+        echo -e "\r"
+        sleep 0.6
+        echo -e "\x04"
+    } | pnpm inject
+    INJECT_EXIT_CODE=$?
+
+    stty echo icanon
+
+    if [ $INJECT_EXIT_CODE -eq 0 ]; then
+        color 32 "Vencord successfully patched!"
+    else
+        color 31 "Vencord patching completed with errors."
+    fi
 }
 
 update_plugins() {
@@ -175,26 +170,108 @@ uninstall_cozi() {
     color 32 "Cozi has been successfully uninstalled."
 }
 
-cozi_help() {
-    color 36 "\nCozi - Vencord Plugin Manager"
-    color 35 "\nUsage: cozi [command] [arguments]"
-    color 35 "\nCommands:"
-    echo "  $(color 33 add) [git link]    - Add a plugin repository"
-    echo "  $(color 33 delete) [repo name] - Remove plugin repository"
-    echo "  $(color 33 patch)             - Build & inject Vencord"
-    echo "  $(color 33 update)            - Update all plugins"
-    echo "  $(color 33 uninstall)         - Uninstall Cozi"
-    echo "  $(color 33 verbose)           - Enable verbose mode"
-    echo "  $(color 33 help)              - Show this help menu"
+cozi_list() {
+    color 36 "\nInstalled Plugins:"
+    if [ -s "$PLUGIN_LIST" ]; then
+        while IFS= read -r git_link; do
+            repo_name=$(basename "$git_link" .git)
+            echo -e "$(color 33 'Repo Name:') $(color 32 $repo_name)"
+            echo -e "$(color 33 'Git Link:')  $(color 34 $git_link)\n"
+        done <"$PLUGIN_LIST"
+    else
+        color 31 "No plugins are installed."
+    fi
+}
+bold() {
+  echo -e "\e[1m$1\e[0m"
 }
 
+cozi_help() {
+    color 36 "
+  ____ ___ ________ 
+ / ___/ _ \__  /_ _|
+| |  | | | |/ / | | 
+| |__| |_| / /_ | | 
+ \____\___/____|___|
+    "
+    color 35 "\n\nCozi - Vencord Plugin Manager"
+    color 34 "\nMade by 1337isnot1337"
+    color 35 "\nUsage: cozi [command] [arguments]"
+    color 35 "\nMain Commands:"
+    echo "  $(color 32 $(bold add)) [git link | file] - Add a plugin repository (single git link or file with git links)"
+    echo "  $(color 32 $(bold patch))                 - Build & inject Vencord"
+    color 35 "\nOther Commands:"
+    echo "  $(color 33 $(bold delete)) [repo name]    - Remove a specific plugin repository"
+    echo "  $(color 33 $(bold export)) [file]         - Export plugin configuration to a file"
+    echo "  $(color 33 $(bold import)) [file]         - Import plugin configuration from a file"
+    echo "  $(color 33 $(bold list))                  - List all installed plugins"
+    echo "  $(color 33 $(bold status))                - Display a detailed status report of Cozi"
+    echo "  $(color 33 $(bold update))                - Update all plugins"
+    echo "  $(color 33 $(bold uninstall))             - Uninstall all cozi related files"
+    echo "  $(color 33 $(bold help))                  - Show this help menu"
+    echo ""
+    color 35 Example:
+    echo "  $(color 33 '    cozi') $(color 32 'add') $(color 33 'https://git.nin0.dev/userplugins/venfetch') - Add Venfetch to plugins" 
+    echo "  $(color 33 '    cozi') $(color 32 'patch') - Patch Vencord so you can use the plugin"
+    echo -e "\nMake sure you enable the plugins in settings!"
+}
+
+add_single_plugin() {
+    local git_link="$1"
+    local repo_name=$(basename "$git_link" .git)
+
+    grep -q "^$git_link$" "$PLUGIN_LIST" && {
+        color 33 "Plugin $repo_name already added."
+        return
+    }
+
+    color 32 "Adding plugin: $repo_name..."
+    git clone "$git_link" "$PLUGIN_REPOS/$repo_name" >/dev/null 2>&1 || {
+        color 31 "Failed to clone $git_link."
+        exit 1
+    }
+    echo "$git_link" >>"$PLUGIN_LIST"
+
+    local package_json="$MAIN_REPO/package.json"
+    local plugin_path="$PLUGIN_REPOS/$repo_name"
+
+    if [ ! -f "$package_json" ]; then
+        color 31 "Error: package.json not found."
+        exit 1
+    fi
+
+    local installed_deps=$(jq -r '.dependencies + .devDependencies | keys[]' "$package_json")
+    local imports=$(grep -Pohr '(?<=from\s+["'''"])(.+?)(?=["'''"])' "$plugin_path" >/dev/null 2>&1 | sort -u)
+
+    for import in $imports; do
+        if [[ ! "$import" =~ ^(\.|\/) ]] && ! echo "$installed_deps" | grep -q "^$import$"; then
+            color 33 "Installing missing dependency: $import"
+            pnpm install "$import" --prefix "$MAIN_REPO" >/dev/null 2>&1 || {
+                color 31 "Failed to install $import."
+                exit 1
+            }
+        fi
+    done
+
+    copy_plugin "$repo_name"
+}
 main() {
     [ "$1" == "-v" ] || [ "$1" == "verbose" ] && VERBOSE=true && shift
     initialize_cozi
     case "$1" in
-    add) add_plugin "$2" ;;
+    add)
+        if [ -z "$2" ]; then
+            color 31 "Error: No plugin git link or file provided."
+            exit 1
+        fi
+        add_plugin "$2"
+        ;;
     delete) delete_plugin "$2" ;;
+    export) cozi_export "$2" ;;
+    import) cozi_import "$2" ;;
+    list) cozi_list ;;
     patch) patch_vencord ;;
+    status) cozi_status ;;
     update) update_plugins ;;
     uninstall) uninstall_cozi ;;
     help) cozi_help ;;
@@ -203,6 +280,132 @@ main() {
         exit 1
         ;;
     esac
+}
+cozi_status() {
+    color 36 "\n=== Cozi Status Report ==="
+
+    # Check for main repository
+    if [ -d "$MAIN_REPO" ]; then
+        color 33 "Vencord Repository: $(color 32 Found)"
+        color 34 "Path: $MAIN_REPO"
+    else
+        color 31 "Error: Vencord repository not found. Did you initialize Cozi?"
+        return 1
+    fi
+
+    # Check for installed plugins
+    local plugin_count=$(wc -l <"$PLUGIN_LIST" 2>/dev/null || echo 0)
+    if [ "$plugin_count" -gt 0 ]; then
+        color 33 "\nInstalled Plugins: $(color 32 $plugin_count)"
+        while IFS= read -r plugin; do
+            local repo_name=$(basename "$plugin" .git)
+            local plugin_path="$PLUGIN_REPOS/$repo_name"
+
+            if [ -d "$plugin_path" ]; then
+                color 32 "  - $repo_name: $(color 34 Installed)"
+                color 34 "    Repository: $plugin"
+                if git -C "$plugin_path" rev-parse HEAD >/dev/null 2>&1; then
+                    local commit_hash=$(git -C "$plugin_path" rev-parse --short HEAD)
+                    local branch_name=$(git -C "$plugin_path" symbolic-ref --short HEAD)
+                    color 34 "    Current Commit: $commit_hash (Branch: $branch_name)"
+                else
+                    color 31 "    Error: Unable to fetch commit details."
+                fi
+            else
+                color 31 "  - $repo_name: $(color 31 Missing)"
+            fi
+        done <"$PLUGIN_LIST"
+    else
+        color 31 "\nNo plugins installed."
+    fi
+
+    # Check Node.js version
+    if node --version >/dev/null 2>&1; then
+        local node_version=$(node --version)
+        color 33 "\nNode.js Version: $(color 32 $node_version)"
+    else
+        color 31 "\nError: Node.js is not installed or not in PATH."
+    fi
+
+    # Check pnpm version
+    if pnpm --version >/dev/null 2>&1; then
+        local pnpm_version=$(pnpm --version)
+        color 33 "pnpm Version: $(color 32 $pnpm_version)"
+    else
+        color 31 "Error: pnpm is not installed or not in PATH."
+    fi
+
+    # Check package.json dependencies
+    if [ -f "$MAIN_REPO/package.json" ]; then
+        color 33 "\nDependencies in package.json:"
+        local dependencies=$(jq -r '.dependencies // {} | keys[]' "$MAIN_REPO/package.json" 2>/dev/null)
+        if [ -n "$dependencies" ]; then
+            echo "$dependencies" | while IFS= read -r dep; do
+                color 34 "  - $dep"
+            done
+        else
+            color 31 "  No dependencies found."
+        fi
+    else
+        color 31 "\nError: package.json not found in $MAIN_REPO."
+    fi
+
+    # Check for untracked files in the Vencord repo
+    if git -C "$MAIN_REPO" status --porcelain >/dev/null 2>&1; then
+        local untracked_files=$(git -C "$MAIN_REPO" status --porcelain)
+        if [ -n "$untracked_files" ]; then
+            color 33 "\nUntracked or Modified Files in Vencord Repository:"
+            echo "$untracked_files" | while IFS= read -r file; do
+                color 34 "  - $file"
+            done
+        else
+            color 32 "\nNo untracked or modified files in Vencord repository."
+        fi
+    else
+        color 31 "\nError: Unable to check Vencord repository status."
+    fi
+
+    color 36 "\n=== End of Cozi Status Report ==="
+}
+
+cozi_export() {
+    local file_path="$1"
+    if [ -z "$file_path" ]; then
+        color 31 "Error: No file path provided."
+        exit 1
+    fi
+
+    if [ ! -d "$(dirname "$file_path")" ]; then
+        color 31 "Error: Directory for file does not exist."
+        exit 1
+    fi
+
+    if [ ! -f "$PLUGIN_LIST" ]; then
+        color 31 "Error: Plugin list file not found. Are any plugins installed?"
+        exit 1
+    fi
+
+    cp "$PLUGIN_LIST" "$file_path" >/dev/null 2>&1 || {
+        color 31 "Failed to export plugin configuration."
+        exit 1
+    }
+
+    color 32 "Plugin configuration successfully exported to $file_path."
+}
+
+cozi_import() {
+    local import_file="$1"
+    if [ -z "$import_file" ] || [ ! -f "$import_file" ]; then
+        color 31 "Error: Invalid or missing file for import."
+        exit 1
+    fi
+    color 32 "Importing plugin configuration from: $import_file"
+    while IFS= read -r line; do
+        if [ -n "$line" ] && [[ ! "$line" =~ ^# ]]; then
+            add_single_plugin "$line"
+        fi
+    done <"$import_file"
+    color 32 "All plugins imported successfully!"
 }
 
 main "$@"

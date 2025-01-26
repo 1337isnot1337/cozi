@@ -1,0 +1,19 @@
+# This is a list of example github links.
+# These can all be found in the unoffical plugins
+# thread in the official Vencord server
+#
+# You can install these with ./cozi add [fileName]
+#
+
+https://git.nin0.dev/userplugins/vcPanelSettings
+https://github.com/coldcord/collapseChatButtons
+https://git.nin0.dev/userplugins/venfetch
+https://git.nin0.dev/userplugins/userflags.git
+https://github.com/Masterjoona/vc-sidebarchat
+https://github.com/ryawaa/vencord-antirickroll
+https://github.com/D3SOX/vc-voiceChatUtilities
+https://github.com/D3SOX/vc-mediaPlaybackSpeed
+https://github.com/fres621/vencord-whos-watching
+https://github.com/KrstlSkll69/WriteUpperCase
+https://github.com/Masterjoona/vc-unreadcountbadge
+https://github.com/1337isnot1337/autoDelete
