@@ -1,37 +1,59 @@
-cozi is a simple, command-line package manager for Vencord packages that aren't officialy supported. 
-Made by 1337isnot1337, protected under GPL v3
-Please feel free to PR or add/report issues, dm me on discord @antipollyanna 
+# Cozi - Vencord Plugin Manager
 
-IMPORTANT!!!
-THIS WAS MADE STRICTLY FOR UNIX BASED SYSTEMS. 
-IT HAS NOT BEEN TESTED ON ANYTHING BESIDES ARCH LINUX. 
-IT WILL ALMOST CERTAINLY BREAK ON WINDOWS (maybe on MacOS). 
-YOU HAVE BEEN WARNED
+```
+  ____ ___ ________
+ / ___/ _ \__  /_ _|
+| |  | | | |/ / | |
+| |__| |_| / /_ | |
+ \____\___/____|___|
+```
 
-Installation: 
+Made by **1337isnot1337**
 
-  `git clone https://github.com/1337isnot1337/cozi` 
+## Usage
+```bash
+cozi [command] [arguments]
+```
 
-  `cd cozi` 
+## Main Commands
+- **`add`** `[git link | file]`  
+  Add a plugin repository (single git link or file with git links).
 
-  `chmod +x cozi` 
+- **`patch`**  
+  Build & inject Vencord.
 
-  `./cozi`
+## Other Commands
+- **`delete`** `[repo name]`  
+  Remove a specific plugin repository.
 
-Usage: `./cozi [command] [arguments]`
+- **`export`** `[file]`  
+  Export plugin configuration to a file.
 
-Commands:
+- **`import`** `[file]`  
+  Import plugin configuration from a file.
 
-    add [git link]     - Add a plugin repository 
+- **`list`**  
+  List all installed plugins.
 
-    delete [repo name] - Remove plugin repository
+- **`status`**  
+  Display a detailed status report of Cozi.
 
-    patch              - Build & inject Vencord
+- **`update`**  
+  Update all plugins.
 
-    update             - Update all plugins
+- **`uninstall`**  
+  Uninstall all Cozi-related files.
 
-    uninstall          - Uninstall Cozi
+- **`help`**  
+  Show this help menu.
 
-    help               - Show this help menu
+## Example
+```bash
+# Add Venfetch to plugins
+cozi add https://git.nin0.dev/userplugins/venfetch
 
+# Patch Vencord so you can use the plugin
+cozi patch
+```
 
+Make sure you enable the plugins in settings!
