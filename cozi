@@ -184,7 +184,7 @@ cozi_list() {
     fi
 }
 bold() {
-  echo -e "\e[1m$1\e[0m"
+    echo -e "\e[1m$1\e[0m"
 }
 
 cozi_help() {
@@ -212,7 +212,7 @@ cozi_help() {
     echo "  $(color 33 $(bold help))                  - Show this help menu"
     echo ""
     color 35 Example:
-    echo "  $(color 33 '    cozi') $(color 32 'add') $(color 33 'https://git.nin0.dev/userplugins/venfetch') - Add Venfetch to plugins" 
+    echo "  $(color 33 '    cozi') $(color 32 'add') $(color 33 'https://git.nin0.dev/userplugins/venfetch') - Add Venfetch to plugins"
     echo "  $(color 33 '    cozi') $(color 32 'patch') - Patch Vencord so you can use the plugin"
     echo -e "\nMake sure you enable the plugins in settings!"
 }
