@@ -81,7 +81,7 @@ def copy_plugin(repo_name):
         )
     except Exception as e:
         color(31, f"Failed to copy {repo_name}: {e}")
-        exit(1)
+        sys.exit(1)
 
 
 def remove_plugin(repo_name):
@@ -221,7 +221,7 @@ def cozi_list():
 def cozi_help():
     print(
         color(
-            "36",  # Cyan
+            "36",
             """
   ____ ___ ________ 
  / ___/ _ \\__  /_ _|
