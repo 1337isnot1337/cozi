@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 import json
+import re
 from pathlib import Path
 
 COZI_DIR = os.path.expanduser("~/.config/Vencord/cozi")
@@ -143,36 +144,23 @@ def patch_vencord():
         subprocess.run(
             ["pnpm", "build"],
             check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
         print(color("31", "Build failed."))
         sys.exit(1)
 
-    print(color("32", "Attempting Auto-Patch"))
+    print(color("32", "Running injector..."))
 
-    # Disable user input for the auto-patch
-    os.system("stty -echo -icanon")
     try:
-        patch_process = subprocess.Popen(["pnpm", "inject"], stdin=subprocess.PIPE)
-        time.sleep(2)
-        patch_process.stdin.write(b"\033[B\r\x04")
-        patch_process.stdin.flush()
-        time.sleep(2)
-        patch_process.stdin.write(b"[B\r\x04")
-        patch_process.stdin.flush()
-
-        patch_process.wait()
-
-        inject_exit_code = patch_process.returncode
-    finally:
-        os.system("stty echo icanon")
-
-    if inject_exit_code == 0:
+        subprocess.run(["pnpm", "inject"], check=True)
         print(color("32", "Vencord successfully patched!"))
-    else:
-        print(color("31", "Vencord patching completed with errors."))
+    except subprocess.CalledProcessError as e:
+        print(color("31", "Vencord patching failed."))
+        sys.exit(e.returncode)
+
+def is_git_repo(path):
+    return os.path.isdir(os.path.join(path, ".git"))
+
 
 
 def update_plugins():
@@ -286,30 +274,33 @@ def add_single_plugin(git_link):
 
     with open(PLUGIN_LIST, "r") as f:
         if git_link in f.read():
-            color(33, f"Plugin {repo_name} already added.")
+            print(color(33, f"Plugin {repo_name} already added."))
             return
 
-    color(32, f"Adding plugin: {repo_name}...")
+    print(color(32, f"Adding plugin: {repo_name}..."))
 
-    try:
-        subprocess.run(
-            ["git", "clone", git_link, f"{PLUGIN_REPOS}/{repo_name}"],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except subprocess.CalledProcessError:
-        color(31, f"Failed to clone {git_link}.")
+    result = subprocess.run(
+        ["git", "clone", git_link, f"{PLUGIN_REPOS}/{repo_name}"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        print(color(31, f"Failed to clone {git_link}"))
+        print(result.stderr)
         sys.exit(1)
 
     with open(PLUGIN_LIST, "a") as f:
         f.write(git_link + "\n")
 
+    print(color(32, f"Cloned plugin {repo_name}. Installing dependencies..."))
+
     package_json = Path(MAIN_REPO) / "package.json"
     plugin_path = Path(PLUGIN_REPOS) / repo_name
 
     if not package_json.exists():
-        color(31, "Error: package.json not found.")
+        print(color(31, "Error: package.json not found."))
         sys.exit(1)
 
     with open(package_json, "r") as f:
@@ -319,34 +310,39 @@ def add_single_plugin(git_link):
         )
 
     imports = set()
+    import_pattern = re.compile(r"""from\s+['"]([^'"]+)['"]""")
+
     for root, _, files in os.walk(plugin_path):
         for file in files:
             if file.endswith(".js") or file.endswith(".ts"):
-                with open(Path(root) / file, "r") as f:
-                    imports.update(
-                        line.split("from")[-1].strip(" '" "\n")
-                        for line in f
-                        if "from" in line
-                    )
+                with open(Path(root) / file, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        match = import_pattern.search(line)
+                        if match:
+                            import_path = match.group(1)
+                            if not (import_path.startswith(".") or import_path.startswith("/")):
+                            # Skip known aliases
+                                if not import_path.startswith(("@api/", "@webpack/", "@utils/", "vendetta/", "vencord/")):
+                                    imports.add(import_path)
+
 
     for imp in imports:
-        if (
-            not (imp.startswith(".") or imp.startswith("/"))
-            and imp not in installed_deps
-        ):
-            color(33, f"Installing missing dependency: {imp}")
-            try:
-                subprocess.run(
-                    ["pnpm", "install", imp, "--prefix", MAIN_REPO],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except subprocess.CalledProcessError:
-                color(31, f"Failed to install {imp}.")
+        if not (imp.startswith(".") or imp.startswith("/")) and imp not in installed_deps:
+            print(color(33, f"Installing missing dependency: {imp}"))
+            dep_result = subprocess.run(
+                ["pnpm", "install", imp, "--prefix", MAIN_REPO],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if dep_result.returncode != 0:
+                print(color(31, f"Failed to install {imp}"))
+                print(dep_result.stderr)
                 sys.exit(1)
 
     copy_plugin(repo_name)
+    print(color(32, f"Plugin {repo_name} installed and copied."))
+
 
 
 def cozi_export(file_path):
@@ -419,25 +415,23 @@ def cozi_status():
             if os.path.isdir(plugin_path):
                 print(color(32, f"  - {repo_name}: {color(34, 'Installed')}"))
                 print(color(34, f"    Repository: {plugin}"))
-                try:
-                    commit_hash = subprocess.check_output(
-                        ["git", "-C", plugin_path, "rev-parse", "--short", "HEAD"],
-                        text=True,
-                    ).strip()
-                    branch_name = subprocess.check_output(
-                        ["git", "-C", plugin_path, "symbolic-ref", "--short", "HEAD"],
-                        text=True,
-                    ).strip()
-                    print(
-                        color(
-                            34,
-                            f"    Current Commit: {commit_hash} (Branch: {branch_name})",
-                        )
-                    )
-                except subprocess.CalledProcessError:
-                    print(color(31, "    Error: Unable to fetch commit details."))
-            else:
-                print(color(31, f"  - {repo_name}: {color(31, 'Missing')}"))
+
+                if is_git_repo(plugin_path):
+                    try:
+                        commit_hash = subprocess.check_output(
+                            ["git", "-C", plugin_path, "rev-parse", "--short", "HEAD"],
+                            text=True,
+                        ).strip()
+                        branch_name = subprocess.check_output(
+                            ["git", "-C", plugin_path, "symbolic-ref", "--short", "HEAD"],
+                            text=True,
+                        ).strip()
+                        print(color(34, f"    Current Commit: {commit_hash} (Branch: {branch_name})"))
+                    except subprocess.CalledProcessError:
+                        print(color(31, "    Error: Unable to fetch commit details."))
+                else:
+                    print(color(33, "    (Note: This is not a Git-tracked plugin.)"))
+
     else:
         print(color(31, "\nNo plugins installed."))
 
