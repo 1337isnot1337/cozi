@@ -14,6 +14,15 @@ PLUGIN_REPOS = os.path.join(COZI_DIR, "pluginRepos")
 MAIN_REPO = os.path.join(COZI_DIR, "mainRepo")
 PLUGIN_LIST = os.path.join(COZI_DIR, "pluginList.txt")
 VERBOSE = False
+SKIP_IMPORTS = (
+    "vendetta", "vencord", "discord-types", "electron",
+    "@webpack", "@utils", "@main", "@api", "@stuff", "@ui"
+)
+BUILTINS = {
+    "fs", "fs/promises", "path", "http", "https", "stream", "url", "os",
+}
+
+WEBPACK_ALIASES = ("@api/", "@webpack/", "@utils/", "vendetta/", "vencord/")
 
 
 def initialize_cozi():
@@ -43,21 +52,24 @@ def initialize_cozi():
         color(32, "Cozi setup complete!")
 
 
+
 def add_plugin(git_link):
     if not git_link:
         color(31, "Error: No git link or file provided.")
         exit(1)
+    
+    file_path = Path(git_link).expanduser()
+    print(f"Checking if {file_path} is a file: {file_path.is_file()}")
 
-    if os.path.isfile(git_link):
-        color(32, f"Reading plugin links from file: {git_link}")
-        with open(git_link, "r") as file:
+    if file_path.is_file():
+        color(32, f"Reading plugin links from file: {file_path}")
+        with open(file_path, "r") as file:
             for line in file:
                 line = line.strip()
                 if line and not line.startswith("#"):
                     add_single_plugin(line)
-
         color(32, "All plugins installed successfully!")
-        color(33, "Now, enable with ./cozi patch")
+        color(33, "Now, enable with ./cozi.py patch")
     else:
         add_single_plugin(git_link)
 
@@ -283,8 +295,17 @@ def add_single_plugin(git_link):
         ["git", "clone", git_link, f"{PLUGIN_REPOS}/{repo_name}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=True
     )
+
+    if result.returncode != 0:
+        print(color(31, f"\nFailed to clone repository:\n  {git_link}"))
+        print(color(31, f"Git error:\n{result.stderr.strip()}"))
+
+        if not git_link.startswith("http"):
+            print(color(33, "Hint: Did you mean to pass a file of plugin URLs? Try `./cozi.py add ./myfilelist.txt`"))
+        sys.exit(1)
+
 
     if result.returncode != 0:
         print(color(31, f"Failed to clone {git_link}"))
@@ -322,23 +343,51 @@ def add_single_plugin(git_link):
                             import_path = match.group(1)
                             if not (import_path.startswith(".") or import_path.startswith("/")):
                             # Skip known aliases
-                                if not import_path.startswith(("@api/", "@webpack/", "@utils/", "vendetta/", "vencord/")):
+                                if not (import_path.startswith(".") or import_path.startswith("/")):
+                                    if import_path in BUILTINS or import_path.startswith(WEBPACK_ALIASES):
+                                        continue  # skip
                                     imports.add(import_path)
 
 
+
+    failed_deps = []
+
     for imp in imports:
-        if not (imp.startswith(".") or imp.startswith("/")) and imp not in installed_deps:
-            print(color(33, f"Installing missing dependency: {imp}"))
-            dep_result = subprocess.run(
-                ["pnpm", "install", imp, "--prefix", MAIN_REPO],
+
+
+        if (
+            imp in BUILTINS
+            or any(imp.startswith(prefix) for prefix in SKIP_IMPORTS)
+            or imp.startswith(".")
+            or imp.startswith("/")
+        ):
+            continue  # don't try to install this
+
+        print(color(33, f"Installing missing dependency: {imp}"))
+        try:
+            proc = subprocess.run(
+                ["pnpm", "install", imp, "--prefix", MAIN_REPO, "-w"],
+                check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            if dep_result.returncode != 0:
-                print(color(31, f"Failed to install {imp}"))
-                print(dep_result.stderr)
-                sys.exit(1)
+        except subprocess.CalledProcessError as e:
+            print(color(31, f"Failed to install {imp}."))
+            print(color(31, "pnpm stdout:"))
+            print(e.stdout.strip() or "<no output>")
+            print(color(31, "pnpm stderr:"))
+            print(e.stderr.strip() or "<no output>")
+
+            failed_deps.append(imp)
+
+
+    if failed_deps:
+        print(color(31, f"\nSome dependencies failed to install: {', '.join(failed_deps)}"))
+        print(color(33, "You may need to install them manually."))
+    else:
+        print(color(32, "All dependencies installed successfully."))
+
 
     copy_plugin(repo_name)
     print(color(32, f"Plugin {repo_name} installed and copied."))
