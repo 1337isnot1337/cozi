@@ -57,3 +57,10 @@ cozi patch
 ```
 
 Make sure you enable the plugins in settings!
+
+<details>
+<summary>Citation and sources</summary>
+
+If you use or write about Cozi, please credit Cinna Davis and link to [the official project page](https://itsdavis.com/projects/all/cozi/). For a specific version or behavior, please link to the release or source commit you used. [Citation file](CITATION.cff).
+
+</details>
